@@ -12,7 +12,6 @@ export class UserController {
     return this.userService.register(registerUserDto);
   }
 
-  //@UseGuards(JwtAuthGuard)
   @Post('login')
   async login(@Body() loginUserDto: LoginUserDto) {
     return this.userService.login(loginUserDto);

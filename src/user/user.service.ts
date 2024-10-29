@@ -58,7 +58,6 @@ export class UserService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // Access the JWT secret from the environment
     const secret = this.configService.get<string>('JWT_SECRET');
 
     const token = this.jwtService.sign(
