@@ -9,7 +9,7 @@ export class Project extends Document {
   @Prop()
   description?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true }) // Make sure this is included
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   owner: Types.ObjectId;
 
   @Prop({ default: false })

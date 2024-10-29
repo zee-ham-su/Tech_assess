@@ -16,7 +16,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { FilterTaskDto } from './dto/filter-task.dto';
 import { PaginationDto } from './dto/pagination.dto';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BulkUpdateStatusDto } from './dto/bulk-update-status.dto';
 
 @UseGuards(JwtAuthGuard)
