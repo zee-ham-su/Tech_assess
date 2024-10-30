@@ -11,44 +11,38 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { Model } from 'mongoose';
 
-
 describe('TaskService', () => {
   let service: TaskService;
   let taskModel: Model<Task>;
   let cacheManager: Cache;
 
-  beforeEach(async () => {
-    const mockTaskModel = jest.fn().mockImplementation(() => ({
-      save: jest.fn().mockResolvedValue(true),
-    }));
+  const mockTaskModel = {
+    create: jest.fn(),
+    find: jest.fn(),
+    findById: jest.fn(),
+    findByIdAndUpdate: jest.fn(),
+    findByIdAndDelete: jest.fn(),
+    updateMany: jest.fn(),
+    countDocuments: jest.fn(),
+  };
 
+  const mockCacheManager = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
+  };
+
+  beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         {
           provide: getModelToken(Task.name),
-          useValue: {
-            new: mockTaskModel,
-            create: jest.fn().mockImplementation((dto) => ({
-              ...dto,
-              save: jest.fn().mockResolvedValue({ id: '1', ...dto }),
-            })),
-            find: jest.fn(),
-            findById: jest.fn(),
-            findByIdAndUpdate: jest.fn(),
-            findByIdAndDelete: jest.fn(),
-            updateMany: jest.fn(),
-            countDocuments: jest.fn(),
-            exec: jest.fn(),
-          },
+          useValue: mockTaskModel,
         },
         {
           provide: CACHE_MANAGER,
-          useValue: {
-            get: jest.fn(),
-            set: jest.fn(),
-            del: jest.fn(),
-          },
+          useValue: mockCacheManager,
         },
       ],
     }).compile();
@@ -56,6 +50,10 @@ describe('TaskService', () => {
     service = module.get<TaskService>(TaskService);
     taskModel = module.get<Model<Task>>(getModelToken(Task.name));
     cacheManager = module.get<Cache>(CACHE_MANAGER);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
@@ -70,82 +68,112 @@ describe('TaskService', () => {
         status: TaskStatus.PENDING,
         project: 'Test Project',
       };
-      const result = { id: '1', ...createTaskDto };
+      const createdTask = { id: '1', ...createTaskDto };
 
-      jest.spyOn(taskModel, 'create').mockResolvedValue(result as any);
+      mockTaskModel.create.mockResolvedValue(createdTask);
+      mockCacheManager.del.mockResolvedValue(undefined);
 
-      expect(await service.create(createTaskDto)).toBe(result);
+      const result = await service.create(createTaskDto);
+
+      expect(result).toEqual(createdTask);
+      expect(mockTaskModel.create).toHaveBeenCalledWith(createTaskDto);
+      expect(mockCacheManager.del).toHaveBeenCalledWith('tasks');
     });
   });
 
   describe('findAll', () => {
-    it('should return an array of tasks', async () => {
-      const result = { tasks: [{ id: '1', title: 'Test Task' }], total: 1 };
+    it('should return tasks from cache if available', async () => {
+      const cachedResult = {
+        tasks: [{ id: '1', title: 'Cached Task' }],
+        total: 1,
+      };
+      const filterTaskDto: FilterTaskDto = {};
+      const paginationDto: PaginationDto = { page: 1, limit: 10 };
+
+      mockCacheManager.get.mockResolvedValue(cachedResult);
+
+      const result = await service.findAll(filterTaskDto, paginationDto);
+
+      expect(result).toEqual(cachedResult);
+      expect(mockCacheManager.get).toHaveBeenCalled();
+      expect(mockTaskModel.find).not.toHaveBeenCalled();
+    });
+
+    it('should return tasks from database if not in cache', async () => {
+      const tasks = [{ id: '1', title: 'Test Task' }];
       const filterTaskDto: FilterTaskDto = { status: TaskStatus.PENDING };
       const paginationDto: PaginationDto = { page: 1, limit: 10 };
 
-      jest.spyOn(taskModel, 'find').mockReturnValue({
+      mockCacheManager.get.mockResolvedValue(null);
+      mockTaskModel.find.mockReturnValue({
         skip: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         sort: jest.fn().mockReturnThis(),
-        exec: jest.fn().mockResolvedValue(result.tasks),
-      } as any);
-      jest.spyOn(taskModel, 'countDocuments').mockResolvedValue(result.total);
+        exec: jest.fn().mockResolvedValue(tasks),
+      });
+      mockTaskModel.countDocuments.mockResolvedValue(1);
+      mockCacheManager.set.mockResolvedValue(undefined);
 
-      expect(await service.findAll(filterTaskDto, paginationDto)).toEqual(
-        result,
-      );
+      const result = await service.findAll(filterTaskDto, paginationDto);
+
+      expect(result).toEqual({ tasks, total: 1 });
+      expect(mockCacheManager.get).toHaveBeenCalled();
+      expect(mockTaskModel.find).toHaveBeenCalled();
+      expect(mockTaskModel.countDocuments).toHaveBeenCalled();
+      expect(mockCacheManager.set).toHaveBeenCalled();
     });
   });
 
   describe('findOne', () => {
     it('should return a task by ID', async () => {
-      const task = {
-        title: 'Test Task',
-        description: 'Test Description',
-        _id: '1',
-      };
-
-      jest.spyOn(taskModel, 'findById').mockReturnValue({
+      const task = { id: '1', title: 'Test Task' };
+      mockTaskModel.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(task),
-      } as any);
+      });
 
       const result = await service.findOne('1');
+
       expect(result).toEqual(task);
+      expect(mockTaskModel.findById).toHaveBeenCalledWith({
+        _id: '1',
+        deleted: false,
+      });
     });
 
     it('should throw NotFoundException if task not found', async () => {
-      jest.spyOn(taskModel, 'findById').mockReturnValue({
+      mockTaskModel.findById.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
-      } as any);
+      });
 
       await expect(service.findOne('1')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('update', () => {
-    it('should update a task by ID', async () => {
+    it('should update a task', async () => {
       const updateTaskDto: UpdateTaskDto = { title: 'Updated Task' };
-      const updatedTask = { ...updateTaskDto, _id: '1' };
+      const updatedTask = { id: '1', ...updateTaskDto };
 
-      jest.spyOn(taskModel, 'findByIdAndUpdate').mockReturnValue({
+      mockTaskModel.findByIdAndUpdate.mockReturnValue({
         exec: jest.fn().mockResolvedValue(updatedTask),
-      } as any);
+      });
 
       const result = await service.update('1', updateTaskDto);
+
       expect(result).toEqual(updatedTask);
+      expect(mockTaskModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        '1',
+        updateTaskDto,
+        { new: true },
+      );
     });
 
     it('should throw NotFoundException if task not found', async () => {
-      const updateTaskDto: UpdateTaskDto = { title: 'Updated Task' };
-
-      jest.spyOn(taskModel, 'findByIdAndUpdate').mockReturnValue({
+      mockTaskModel.findByIdAndUpdate.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
-      } as any);
+      });
 
-      await expect(service.update('1', updateTaskDto)).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(service.update('1', {})).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -153,38 +181,42 @@ describe('TaskService', () => {
     it('should update the status of multiple tasks', async () => {
       const taskIds = ['1', '2'];
       const status = TaskStatus.IN_PROGRESS;
-      const tasks = [
-        { title: 'Task 1', status, _id: '1' },
-        { title: 'Task 2', status, _id: '2' },
+      const updatedTasks = [
+        { id: '1', status },
+        { id: '2', status },
       ];
 
-      jest
-        .spyOn(taskModel, 'updateMany')
-        .mockResolvedValue({ modifiedCount: 2 } as any);
-      jest.spyOn(taskModel, 'find').mockReturnValue({
-        exec: jest.fn().mockResolvedValue(tasks),
-      } as any);
+      mockTaskModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+      mockTaskModel.find.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(updatedTasks),
+      });
 
       const result = await service.bulkUpdateStatus(taskIds, status);
-      expect(result).toEqual(tasks);
+
+      expect(result).toEqual(updatedTasks);
+      expect(mockTaskModel.updateMany).toHaveBeenCalledWith(
+        { _id: { $in: taskIds } },
+        { $set: { status } },
+      );
+      expect(mockTaskModel.find).toHaveBeenCalledWith({
+        _id: { $in: taskIds },
+      });
     });
 
     it('should throw BadRequestException if invalid status provided', async () => {
       const taskIds = ['1', '2'];
-      const status = 'INVALID_STATUS' as TaskStatus;
+      const invalidStatus = 'INVALID_STATUS' as TaskStatus;
 
-      await expect(service.bulkUpdateStatus(taskIds, status)).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.bulkUpdateStatus(taskIds, invalidStatus),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw NotFoundException if no tasks found for provided IDs', async () => {
       const taskIds = ['1', '2'];
       const status = TaskStatus.IN_PROGRESS;
 
-      jest
-        .spyOn(taskModel, 'updateMany')
-        .mockResolvedValue({ modifiedCount: 0 } as any);
+      mockTaskModel.updateMany.mockResolvedValue({ modifiedCount: 0 });
 
       await expect(service.bulkUpdateStatus(taskIds, status)).rejects.toThrow(
         NotFoundException,
@@ -193,36 +225,50 @@ describe('TaskService', () => {
   });
 
   describe('remove', () => {
-    it('should remove a task by ID', async () => {
-      jest.spyOn(taskModel, 'findByIdAndDelete').mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: '1' }),
-      } as any);
+    it('should remove a task', async () => {
+      const deletedTask = { id: '1', title: 'Deleted Task' };
 
-      await expect(service.remove('1')).resolves.toBeUndefined();
+      mockTaskModel.findByIdAndDelete.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(deletedTask),
+      });
+
+      await service.remove('1');
+
+      expect(mockTaskModel.findByIdAndDelete).toHaveBeenCalledWith('1');
     });
 
     it('should throw NotFoundException if task not found', async () => {
-      jest.spyOn(taskModel, 'findByIdAndDelete').mockReturnValue({
+      mockTaskModel.findByIdAndDelete.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
-      } as any);
+      });
 
       await expect(service.remove('1')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('softDelete', () => {
-    it('should soft delete a task by ID', async () => {
-      jest.spyOn(taskModel, 'findByIdAndUpdate').mockReturnValue({
-        exec: jest.fn().mockResolvedValue({ _id: '1' }),
-      } as any);
+    it('should soft delete a task', async () => {
+      const softDeletedTask = {
+        id: '1',
+        title: 'Soft Deleted Task',
+        deleted: true,
+      };
 
-      await expect(service.softDelete('1')).resolves.toBeUndefined();
+      mockTaskModel.findByIdAndUpdate.mockReturnValue({
+        exec: jest.fn().mockResolvedValue(softDeletedTask),
+      });
+
+      await service.softDelete('1');
+
+      expect(mockTaskModel.findByIdAndUpdate).toHaveBeenCalledWith('1', {
+        deleted: true,
+      });
     });
 
     it('should throw NotFoundException if task not found', async () => {
-      jest.spyOn(taskModel, 'findByIdAndUpdate').mockReturnValue({
+      mockTaskModel.findByIdAndUpdate.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
-      } as any);
+      });
 
       await expect(service.softDelete('1')).rejects.toThrow(NotFoundException);
     });

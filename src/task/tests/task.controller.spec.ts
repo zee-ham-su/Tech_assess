@@ -5,6 +5,10 @@ import { CreateTaskDto, TaskStatus } from '../dto/create-task.dto';
 import { UpdateTaskDto } from '../dto/update-task.dto';
 import { FilterTaskDto } from '../dto/filter-task.dto';
 import { PaginationDto } from '../dto/pagination.dto';
+import { BulkUpdateStatusDto } from '../dto/bulk-update-status.dto';
+import { Task } from '../entities/task.entity';
+import { Project } from '../../project/entities/project.entity';
+import { Types } from 'mongoose';
 
 describe('TaskController', () => {
   let taskController: TaskController;
@@ -54,20 +58,66 @@ describe('TaskController', () => {
   });
 
   describe('findAll', () => {
-    it('should return an array of tasks', async () => {
-      const result = {
-        tasks: [{ id: '1', title: 'Test Task' }],
-        page: 1,
-        limit: 10,
+    it('should return an array of tasks with pagination info', async () => {
+      const mockProject: Partial<Project> = {
+        _id: 'project1',
+        name: 'Test Project',
+        description: 'Test Project Description',
+        owner: new Types.ObjectId(),
+        deleted: false,
       };
+
+      const tasks: Partial<Task>[] = [
+        {
+          _id: '1',
+          title: 'Test Task',
+          description: 'Test Description',
+          status: TaskStatus.PENDING,
+          project: mockProject as Project,
+          deleted: false,
+        },
+      ];
+      const total = 1;
       const filterTaskDto: FilterTaskDto = {};
       const paginationDto: PaginationDto = { page: 1, limit: 10 };
 
-      jest.spyOn(taskService, 'findAll').mockResolvedValue(result as any);
+      jest
+        .spyOn(taskService, 'findAll')
+        .mockResolvedValue({ tasks: tasks as Task[], total });
 
-      expect(
-        await taskController.findAll(filterTaskDto, paginationDto),
-      ).toStrictEqual(result);
+      const result = await taskController.findAll(filterTaskDto, paginationDto);
+
+      expect(result).toEqual({
+        tasks,
+        total,
+        page: paginationDto.page,
+        limit: paginationDto.limit,
+      });
+    });
+  });
+
+  describe('bulkUpdateStatus', () => {
+    it('should update status of multiple tasks', async () => {
+      const bulkUpdateStatusDto: BulkUpdateStatusDto = {
+        task_ids: ['1', '2'],
+        status: TaskStatus.IN_PROGRESS,
+      };
+      const updatedTasks = [
+        { id: '1', status: TaskStatus.IN_PROGRESS },
+        { id: '2', status: TaskStatus.IN_PROGRESS },
+      ];
+
+      jest
+        .spyOn(taskService, 'bulkUpdateStatus')
+        .mockResolvedValue(updatedTasks as any);
+
+      const result = await taskController.bulkUpdateStatus(bulkUpdateStatusDto);
+
+      expect(result).toBe(updatedTasks);
+      expect(taskService.bulkUpdateStatus).toHaveBeenCalledWith(
+        bulkUpdateStatusDto.task_ids,
+        bulkUpdateStatusDto.status,
+      );
     });
   });
 
@@ -93,18 +143,22 @@ describe('TaskController', () => {
   });
 
   describe('remove', () => {
-    it('should remove a task', async () => {
-      jest.spyOn(taskService, 'remove').mockResolvedValue(undefined); // Expect `void` (undefined) as the return
+    it('should remove a task and return a success message', async () => {
+      jest.spyOn(taskService, 'remove').mockResolvedValue(undefined);
 
-      await expect(taskController.remove('1')).resolves.toBeUndefined();
+      const result = await taskController.remove('1');
+
+      expect(result).toEqual({ message: 'Task with ID 1 deleted' });
     });
   });
 
   describe('softDelete', () => {
-    it('should soft delete a task', async () => {
-      jest.spyOn(taskService, 'softDelete').mockResolvedValue(undefined); // Expect `void` (undefined) as the return
+    it('should soft delete a task and return a success message', async () => {
+      jest.spyOn(taskService, 'softDelete').mockResolvedValue(undefined);
 
-      await expect(taskController.softDelete('1')).resolves.toBeUndefined();
+      const result = await taskController.softDelete('1');
+
+      expect(result).toEqual({ message: 'Task with ID 1 soft deleted' });
     });
   });
 });

@@ -27,12 +27,12 @@ export class ProjectService {
       throw new BadRequestException('Invalid user ID');
     }
 
-    const newProject = new this.projectModel({
+    const newProject = await this.projectModel.create({
       ...createProjectDto,
       owner: userId,
     });
 
-    return await newProject.save();
+    return newProject;
   }
 
   async findAll(owner: string): Promise<Project[]> {

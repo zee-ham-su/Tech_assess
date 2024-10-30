@@ -22,10 +22,9 @@ export class TaskService {
   ) {}
 
   async create(createTaskDto: CreateTaskDto): Promise<Task> {
-    const newTask = new this.taskModel(createTaskDto);
-    const savedTask = await newTask.save();
+    const newTask = await this.taskModel.create(createTaskDto);
     await this.cacheManager.del('tasks');
-    return savedTask;
+    return newTask;
   }
 
   async findAll(
