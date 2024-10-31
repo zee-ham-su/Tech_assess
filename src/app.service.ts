@@ -7,6 +7,6 @@ export class AppService {
   }
 
   getWelcomeMessage(): string {
-    return 'Welcome to the Task Management API! Use /api/v1 for available endpoints. Thank you!';
+    return 'Welcome to the Task Management API! Use /api/v1 for available endpoints.Thank you!';
   }
 }
