@@ -20,6 +20,9 @@ export class Task extends Document {
   @Prop({ type: Types.ObjectId, ref: 'Project', required: true })
   project: Project;
 
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  user: Types.ObjectId;
+
   @Prop({ default: false })
   deleted: boolean;
 }
