@@ -128,14 +128,20 @@ export class TaskService {
       );
   }
 
-  async softDelete(id: string, userId: string): Promise<void> {
+  async softDelete(id: string, userId: string): Promise<{ message: string }> {
     const result = await this.taskModel
-      .findOneAndUpdate({ _id: id, user: userId }, { deleted: true })
+      .findOneAndUpdate(
+        { _id: id, user: userId },
+        { deleted: true },
+        { new: true },
+      )
       .exec();
+
     if (!result) {
       throw new NotFoundException(
         `Task with ID ${id} not found or not accessible`,
       );
     }
+    return { message: `Task with ID ${id} soft deleted` };
   }
 }

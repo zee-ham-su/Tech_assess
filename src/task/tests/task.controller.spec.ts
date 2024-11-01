@@ -50,10 +50,15 @@ describe('TaskController', () => {
         project: 'Test Project',
       };
       const result = { id: '1', ...createTaskDto };
+      const req = { user: { userId: 'testUserId' } };
 
       jest.spyOn(taskService, 'create').mockResolvedValue(result as any);
 
-      expect(await taskController.create(createTaskDto)).toBe(result);
+      expect(await taskController.create(createTaskDto, req)).toBe(result);
+      expect(taskService.create).toHaveBeenCalledWith({
+        ...createTaskDto,
+        user: 'testUserId',
+      });
     });
   });
 
@@ -77,15 +82,21 @@ describe('TaskController', () => {
           deleted: false,
         },
       ];
+
       const total = 1;
       const filterTaskDto: FilterTaskDto = {};
       const paginationDto: PaginationDto = { page: 1, limit: 10 };
+      const req = { user: { userId: 'testUserId' } };
 
       jest
         .spyOn(taskService, 'findAll')
         .mockResolvedValue({ tasks: tasks as Task[], total });
 
-      const result = await taskController.findAll(filterTaskDto, paginationDto);
+      const result = await taskController.findAll(
+        filterTaskDto,
+        paginationDto,
+        req,
+      );
 
       expect(result).toEqual({
         tasks,
@@ -93,6 +104,11 @@ describe('TaskController', () => {
         page: paginationDto.page,
         limit: paginationDto.limit,
       });
+      expect(taskService.findAll).toHaveBeenCalledWith(
+        'testUserId',
+        filterTaskDto,
+        paginationDto,
+      );
     });
   });
 
@@ -106,15 +122,20 @@ describe('TaskController', () => {
         { id: '1', status: TaskStatus.IN_PROGRESS },
         { id: '2', status: TaskStatus.IN_PROGRESS },
       ];
+      const req = { user: { userId: 'testUserId' } };
 
       jest
         .spyOn(taskService, 'bulkUpdateStatus')
         .mockResolvedValue(updatedTasks as any);
 
-      const result = await taskController.bulkUpdateStatus(bulkUpdateStatusDto);
+      const result = await taskController.bulkUpdateStatus(
+        bulkUpdateStatusDto,
+        req,
+      );
 
       expect(result).toBe(updatedTasks);
       expect(taskService.bulkUpdateStatus).toHaveBeenCalledWith(
+        'testUserId',
         bulkUpdateStatusDto.task_ids,
         bulkUpdateStatusDto.status,
       );
@@ -124,10 +145,12 @@ describe('TaskController', () => {
   describe('findOne', () => {
     it('should return a single task', async () => {
       const result = { id: '1', title: 'Test Task' };
+      const req = { user: { userId: 'testUserId' } };
 
       jest.spyOn(taskService, 'findOne').mockResolvedValue(result as any);
 
-      expect(await taskController.findOne('1')).toBe(result);
+      expect(await taskController.findOne('1', req)).toBe(result);
+      expect(taskService.findOne).toHaveBeenCalledWith('1', 'testUserId');
     });
   });
 
@@ -135,30 +158,40 @@ describe('TaskController', () => {
     it('should update a task', async () => {
       const updateTaskDto: UpdateTaskDto = { title: 'Updated Task' };
       const result = { id: '1', ...updateTaskDto };
+      const req = { user: { userId: 'testUserId' } };
 
       jest.spyOn(taskService, 'update').mockResolvedValue(result as any);
 
-      expect(await taskController.update('1', updateTaskDto)).toBe(result);
+      expect(await taskController.update('1', updateTaskDto, req)).toBe(result);
+      expect(taskService.update).toHaveBeenCalledWith(
+        '1',
+        'testUserId',
+        updateTaskDto,
+      );
     });
   });
 
   describe('remove', () => {
     it('should remove a task and return a success message', async () => {
+      const req = { user: { userId: 'testUserId' } };
       jest.spyOn(taskService, 'remove').mockResolvedValue(undefined);
 
-      const result = await taskController.remove('1');
+      const result = await taskController.remove('1', req);
 
       expect(result).toEqual({ message: 'Task with ID 1 deleted' });
+      expect(taskService.remove).toHaveBeenCalledWith('1', 'testUserId');
     });
   });
 
   describe('softDelete', () => {
     it('should soft delete a task and return a success message', async () => {
+      const req = { user: { userId: 'testUserId' } };
       jest.spyOn(taskService, 'softDelete').mockResolvedValue(undefined);
 
-      const result = await taskController.softDelete('1');
+      const result = await taskController.softDelete('1', req);
 
       expect(result).toEqual({ message: 'Task with ID 1 soft deleted' });
+      expect(taskService.softDelete).toHaveBeenCalledWith('1', 'testUserId');
     });
   });
 });
