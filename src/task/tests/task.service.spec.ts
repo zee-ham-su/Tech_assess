@@ -28,6 +28,7 @@ describe('TaskService', () => {
     findOne: jest.fn(),
     findByIdAndUpdate: jest.fn(),
     findOneAndDelete: jest.fn(),
+    findOneAndUpdate: jest.fn(),
     updateMany: jest.fn(),
     countDocuments: jest.fn(),
   };
@@ -77,11 +78,12 @@ describe('TaskService', () => {
 
   describe('create', () => {
     it('should create a task', async () => {
-      const createTaskDto: CreateTaskDto = {
+      const createTaskDto: CreateTaskDto & { user: string } = {
         title: 'Test Task',
         description: 'Test Description',
         status: TaskStatus.PENDING,
         project: 'projectId',
+        user: 'userId',
       };
       const createdTask = { id: '1', ...createTaskDto };
 
@@ -97,11 +99,12 @@ describe('TaskService', () => {
     });
 
     it('should throw ForbiddenException if user does not own the project', async () => {
-      const createTaskDto: CreateTaskDto = {
+      const createTaskDto: CreateTaskDto & { user: string } = {
         title: 'Test Task',
         description: 'Test Description',
         status: TaskStatus.PENDING,
         project: 'projectId',
+        user: 'userId',
       };
 
       mockProjectService.findOne.mockResolvedValue({
@@ -321,14 +324,15 @@ describe('TaskService', () => {
       };
       const userId = 'userId';
 
-      mockTaskModel.findByIdAndUpdate.mockReturnValue({
+      mockTaskModel.findOneAndUpdate.mockReturnValue({
         exec: jest.fn().mockResolvedValue(softDeletedTask),
       });
 
-      await service.softDelete('1', userId);
+      const result = await service.softDelete('1', userId);
 
-      expect(mockTaskModel.findByIdAndUpdate).toHaveBeenCalledWith(
-        '1',
+      expect(result).toEqual({ message: 'Task with ID 1 soft deleted' });
+      expect(mockTaskModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '1', user: userId },
         { deleted: true },
         { new: true },
       );
@@ -336,7 +340,7 @@ describe('TaskService', () => {
 
     it('should throw NotFoundException if task not found', async () => {
       const userId = 'userId';
-      mockTaskModel.findByIdAndUpdate.mockReturnValue({
+      mockTaskModel.findOneAndUpdate.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
       });
 
