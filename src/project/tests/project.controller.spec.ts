@@ -81,42 +81,78 @@ describe('ProjectController', () => {
 
     describe('findOne', () => {
       it('should return a single project', async () => {
-        const result = { id: '1', name: 'Test Project' };
+        const result = {
+          id: '1',
+          name: 'Test Project',
+          owner: { toString: () => 'userId' },
+        };
+        const req = { user: { userId: 'userId' } };
 
         jest.spyOn(service, 'findOne').mockResolvedValue(result as Project);
 
-        expect(await controller.findOne('1')).toBe(result);
+        expect(await controller.findOne('1', req)).toBe(result);
       });
     });
 
     describe('update', () => {
       it('should update a project', async () => {
         const updateProjectDto: UpdateProjectDto = { name: 'Updated Project' };
-        const result = { id: '1', ...updateProjectDto };
+        const project = {
+          id: '1',
+          name: 'Test Project',
+          owner: { toString: () => 'userId' },
+        } as unknown as Project;
+        const req = { user: { userId: 'userId' } };
 
-        jest.spyOn(service, 'update').mockResolvedValue(result as Project);
+        jest.spyOn(service, 'findOne').mockResolvedValue(project);
+        jest
+          .spyOn(service, 'update')
+          .mockResolvedValue({ ...project, ...updateProjectDto } as Project);
 
-        expect(await controller.update('1', updateProjectDto)).toBe(result);
+        expect(await controller.update('1', updateProjectDto, req)).toEqual({
+          ...project,
+          ...updateProjectDto,
+        });
       });
     });
 
     describe('remove', () => {
       it('should remove a project', async () => {
-        const result = { message: 'Project removed' };
+        const project = {
+          id: '1',
+          name: 'Test Project',
+          owner: { toString: () => 'userId' },
+        } as unknown as Project;
+        const req = { user: { userId: 'userId' } };
 
-        jest.spyOn(service, 'remove').mockResolvedValue(result);
+        jest.spyOn(service, 'findOne').mockResolvedValue(project);
+        jest
+          .spyOn(service, 'remove')
+          .mockResolvedValue({ message: 'Project removed' });
 
-        expect(await controller.remove('1')).toBe(result);
+        expect(await controller.remove('1', req)).toEqual({
+          message: 'Project removed',
+        });
       });
     });
 
     describe('softDelete', () => {
       it('should soft delete a project', async () => {
-        const result = { message: 'Project soft deleted' };
+        const project = {
+          id: '1',
+          name: 'Test Project',
+          owner: { toString: () => 'userId' },
+        } as unknown as Project;
+        const req = { user: { userId: 'userId' } };
 
-        jest.spyOn(service, 'softDelete').mockResolvedValue(result);
+        jest.spyOn(service, 'findOne').mockResolvedValue(project);
+        jest
+          .spyOn(service, 'softDelete')
+          .mockResolvedValue({ message: 'Project soft deleted' });
 
-        expect(await controller.softDelete('1')).toBe(result);
+        expect(await controller.softDelete('1', req)).toEqual({
+          message: 'Project soft deleted',
+        });
       });
     });
   });

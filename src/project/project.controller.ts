@@ -8,6 +8,7 @@ import {
   Param,
   UseGuards,
   Request,
+  NotFoundException,
 } from '@nestjs/common';
 import { ProjectService } from './project.service';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -28,29 +29,87 @@ export class ProjectController {
 
   @Get()
   findAll(@Request() req): Promise<Project[]> {
-    return this.projectService.findAll(req.user.userId);
+    const userId = req.user.userId;
+    return this.projectService.findAll(userId);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string): Promise<Project> {
-    return this.projectService.findOne(id);
+  async findOne(@Param('id') id: string, @Request() req): Promise<Project> {
+    const userId = req.user.userId;
+    const project = await this.projectService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.owner.toString() !== userId) {
+      throw new NotFoundException('You do not have access to this project');
+    }
+
+    return project;
   }
 
   @Patch(':id')
-  update(
+  async update(
     @Param('id') id: string,
     @Body() updateProjectDto: UpdateProjectDto,
+    @Request() req,
   ): Promise<Project> {
-    return this.projectService.update(id, updateProjectDto);
+    const userId = req.user.userId;
+    const project = await this.projectService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.owner.toString() !== userId) {
+      throw new NotFoundException(
+        'You do not have access to update this project',
+      );
+    }
+
+    return this.projectService.update(id, updateProjectDto, userId);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string): Promise<{ message: string }> {
-    return this.projectService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Request() req,
+  ): Promise<{ message: string }> {
+    const userId = req.user.userId;
+    const project = await this.projectService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.owner.toString() !== userId) {
+      throw new NotFoundException(
+        'You do not have access to delete this project',
+      );
+    }
+
+    return this.projectService.remove(id, userId);
   }
 
   @Delete(':id/soft')
-  softDelete(@Param('id') id: string): Promise<{ message: string }> {
-    return this.projectService.softDelete(id);
+  async softDelete(
+    @Param('id') id: string,
+    @Request() req,
+  ): Promise<{ message: string }> {
+    const userId = req.user.userId;
+    const project = await this.projectService.findOne(id);
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.owner.toString() !== userId) {
+      throw new NotFoundException(
+        'You do not have access to soft delete this project',
+      );
+    }
+
+    return this.projectService.softDelete(id, userId);
   }
 }

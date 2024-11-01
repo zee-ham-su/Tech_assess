@@ -14,19 +14,21 @@ describe('ProjectService', () => {
   let projectModel: Model<Project>;
   let cacheManager: Cache;
 
-  // Mocking the Project model
   const mockProjectModel = {
     create: jest.fn().mockResolvedValue({ save: jest.fn() }),
     find: jest.fn(),
+    findOne: jest.fn(),
+    findOneAndUpdate: jest.fn(),
+    findOneAndDelete: jest.fn(),
     findById: jest.fn(),
     findByIdAndUpdate: jest.fn(),
     findByIdAndDelete: jest.fn(),
   };
 
-  // Mocking the Cache manager
   const mockCacheManager = {
     get: jest.fn(),
     set: jest.fn(),
+    del: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -72,77 +74,112 @@ describe('ProjectService', () => {
 
   describe('findAll', () => {
     it('should return projects from cache if available', async () => {
-      const owner = 'ownerId';
-      const cachedProjects = [{ name: 'Cached Project' }];
-      mockCacheManager.get.mockResolvedValue(cachedProjects);
+      const ownerId = new Types.ObjectId().toHexString();
+      mockCacheManager.get.mockResolvedValue([{ name: 'Cached Project' }]);
 
-      const result = await service.findAll(owner);
+      const result = await service.findAll(ownerId);
 
-      expect(result).toEqual(cachedProjects);
+      expect(result).toEqual([{ name: 'Cached Project' }]);
     });
 
     it('should return projects from database if not in cache', async () => {
-      const owner = 'ownerId';
-      const projects = [{ name: 'DB Project' }];
+      const ownerId = new Types.ObjectId().toHexString();
       mockCacheManager.get.mockResolvedValue(null);
       mockProjectModel.find.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(projects),
+        exec: jest.fn().mockResolvedValue([{ name: 'DB Project' }]),
       });
 
-      const result = await service.findAll(owner);
+      const result = await service.findAll(ownerId);
 
-      expect(result).toEqual(projects);
+      expect(result).toEqual([{ name: 'DB Project' }]);
       expect(mockCacheManager.set).toHaveBeenCalledWith(
-        `projects:${owner}`,
-        projects,
+        `projects:${ownerId}`,
+        [{ name: 'DB Project' }],
         600,
       );
     });
   });
 
   describe('findOne', () => {
+    it('should throw BadRequestException if ID format is invalid', async () => {
+      const invalidId = 'invalidObjectId';
+      jest.spyOn(Types.ObjectId, 'isValid').mockReturnValue(false);
+
+      await expect(service.findOne(invalidId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
     it('should throw NotFoundException if project not found', async () => {
-      mockProjectModel.findById.mockReturnValue({
+      const validNonExistentId = new Types.ObjectId().toHexString();
+      jest.spyOn(Types.ObjectId, 'isValid').mockReturnValue(true);
+
+      mockProjectModel.findOne.mockReturnValue({
         exec: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(service.findOne('invalidId')).rejects.toThrow(
+      await expect(service.findOne(validNonExistentId)).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('should return the project if found', async () => {
+      const validId = new Types.ObjectId().toHexString();
       const project = { name: 'Test Project' };
-      mockProjectModel.findById.mockReturnValue({
+      mockProjectModel.findOne.mockReturnValue({
         exec: jest.fn().mockResolvedValue(project),
       });
 
-      const result = await service.findOne('validId');
-
+      const result = await service.findOne(validId);
       expect(result).toEqual(project);
     });
   });
 
   describe('update', () => {
     it('should throw NotFoundException if project not found', async () => {
-      mockProjectModel.findByIdAndUpdate.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(null),
-      });
+      const updateProjectDto: UpdateProjectDto = { name: 'Updated Project' };
+      const userId = new Types.ObjectId().toHexString();
+      mockProjectModel.findOne.mockResolvedValue(null);
 
       await expect(
-        service.update('invalidId', {} as UpdateProjectDto),
+        service.update('invalidId', updateProjectDto, userId),
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should update and return the project if found', async () => {
-      const project = { name: 'Updated Project' };
-      mockProjectModel.findByIdAndUpdate.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(project),
+    it('should update and return the updated project', async () => {
+      const projectId = new Types.ObjectId();
+      const ownerId = new Types.ObjectId();
+      const existingProject = {
+        _id: projectId,
+        owner: ownerId,
+        name: 'Old Project Name',
+        save: jest.fn().mockResolvedValue({
+          _id: projectId,
+          owner: ownerId,
+          name: 'Updated Project',
+        }),
+      };
+      mockProjectModel.findOne.mockResolvedValue(existingProject);
+
+      const updateProjectDto: UpdateProjectDto = { name: 'Updated Project' };
+      const result = await service.update(
+        projectId.toHexString(),
+        updateProjectDto,
+        ownerId.toHexString(),
+      );
+
+      expect(mockProjectModel.findOne).toHaveBeenCalledWith({
+        _id: projectId.toHexString(),
+        owner: ownerId.toHexString(),
       });
 
-      const result = await service.update('validId', {} as UpdateProjectDto);
+      expect(existingProject.save).toHaveBeenCalled();
 
-      expect(result).toEqual(project);
+      expect(result).toMatchObject({
+        _id: projectId,
+        owner: ownerId,
+        name: 'Updated Project',
+      });
     });
   });
 
@@ -152,43 +189,47 @@ describe('ProjectService', () => {
         exec: jest.fn().mockResolvedValue(null),
       });
 
-      await expect(service.remove('invalidId')).rejects.toThrow(
+      await expect(service.remove('invalidId', 'userId')).rejects.toThrow(
         NotFoundException,
       );
     });
 
     it('should delete and return a success message if project found', async () => {
-      const project = { name: 'Deleted Project' };
-      mockProjectModel.findByIdAndDelete.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(project),
+      const projectId = new Types.ObjectId().toHexString();
+      const userId = new Types.ObjectId().toHexString();
+
+      mockProjectModel.findOneAndDelete.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: projectId,
+          owner: userId,
+          name: 'Deleted Project',
+        }),
       });
 
-      const result = await service.remove('validId');
+      const result = await service.remove(projectId, userId);
 
       expect(result).toEqual({ message: 'Project deleted successfully' });
     });
   });
 
   describe('softDelete', () => {
-    it('should throw NotFoundException if project not found', async () => {
-      mockProjectModel.findByIdAndUpdate.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(null),
-      });
-
-      await expect(service.softDelete('invalidId')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
     it('should soft delete and return a success message if project found', async () => {
-      const project = { name: 'Soft Deleted Project' };
-      mockProjectModel.findByIdAndUpdate.mockReturnValue({
-        exec: jest.fn().mockResolvedValue(project),
+      const projectId = new Types.ObjectId().toHexString();
+      const userId = new Types.ObjectId().toHexString();
+
+      mockProjectModel.findOneAndUpdate.mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          _id: projectId,
+          owner: userId,
+          deleted: true,
+        }),
       });
 
-      const result = await service.softDelete('validId');
+      const result = await service.softDelete(projectId, userId);
 
-      expect(result).toEqual({ message: 'Project soft deleted successfully' });
+      expect(result).toEqual({
+        message: 'Project soft deleted successfully',
+      });
     });
   });
 });

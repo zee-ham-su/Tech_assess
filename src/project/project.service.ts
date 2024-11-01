@@ -31,23 +31,35 @@ export class ProjectService {
       ...createProjectDto,
       owner: userId,
     });
-
+    await this.cacheManager.del(`projects:${userId}`); // Clear cache after creation
     return newProject;
   }
 
   async findAll(owner: string): Promise<Project[]> {
+    if (!Types.ObjectId.isValid(owner)) {
+      throw new BadRequestException('Invalid owner ID');
+    }
+
     const cacheKey = `projects:${owner}`;
     const cacheProjects = await this.cacheManager.get<Project[]>(cacheKey);
     if (cacheProjects) {
       return cacheProjects;
     }
-    const projects = await this.projectModel.find({ owner }).exec();
+    const projects = await this.projectModel
+      .find({ owner, deleted: { $ne: true } })
+      .exec();
     await this.cacheManager.set(cacheKey, projects, 600);
     return projects;
   }
 
   async findOne(id: string): Promise<Project> {
-    const project = await this.projectModel.findById(id).exec();
+    if (!Types.ObjectId.isValid(id)) {
+      throw new BadRequestException('Invalid project ID');
+    }
+
+    const project = await this.projectModel
+      .findOne({ _id: id, deleted: { $ne: true } })
+      .exec();
     if (!project) {
       throw new NotFoundException('Project not found');
     }
@@ -57,30 +69,42 @@ export class ProjectService {
   async update(
     id: string,
     updateProjectDto: UpdateProjectDto,
+    userId: string,
   ): Promise<Project> {
-    const project = await this.projectModel
-      .findByIdAndUpdate(id, updateProjectDto, { new: true })
-      .exec();
+    const project = await this.projectModel.findOne({ _id: id, owner: userId });
     if (!project) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException(
+        'Project not found or you do not have access',
+      );
     }
+    Object.assign(project, updateProjectDto);
+    await project.save();
     return project;
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const project = await this.projectModel.findByIdAndDelete(id).exec();
+  async remove(id: string, userId: string): Promise<{ message: string }> {
+    const project = await this.projectModel.findOneAndDelete({
+      _id: id,
+      owner: userId,
+    });
     if (!project) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException(
+        'Project not found or you do not have access',
+      );
     }
     return { message: 'Project deleted successfully' };
   }
 
-  async softDelete(id: string): Promise<{ message: string }> {
-    const result = await this.projectModel
-      .findByIdAndUpdate(id, { deleted: true })
-      .exec();
-    if (!result) {
-      throw new NotFoundException(`Project with ID ${id} not found`);
+  async softDelete(id: string, userId: string): Promise<{ message: string }> {
+    const project = await this.projectModel.findOneAndUpdate(
+      { _id: id, owner: userId },
+      { deleted: true },
+      { new: true },
+    );
+    if (!project) {
+      throw new NotFoundException(
+        'Project not found or you do not have access',
+      );
     }
     return { message: 'Project soft deleted successfully' };
   }
